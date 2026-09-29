@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mercearia do João - Sistema</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { background: #f0f2f5; color: #333; }
+        .container { max-width: 900px; margin: 40px auto; padding: 20px; }
+        .card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1, h2 { color: #1a73e8; margin-bottom: 20px; }
+        input, button { padding: 12px; margin: 8px 0; width: 100%; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; }
+        button { background: #1a73e8; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #1557b0; }
+        button.danger { background: #d93025; }
+        button.danger:hover { background: #b3261e; }
+        button.success { background: #188038; }
+        .hidden { display: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; }
+        .msg { padding: 12px; border-radius: 8px; margin: 10px 0; }
+        .erro { background: #fce8e6; color: #c5221f; }
+        .sucesso { background: #e6f4ea; color: #137333; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .form-row { display: flex; gap: 10px; }
+        .form-row input { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- TELA DE LOGIN -->
+        <div id="tela-login" class="card">
+            <h1>🏪 Mercearia do João</h1>
+            <h2>Login</h2>
+            <div id="msg-login"></div>
+            <input type="text" id="username" placeholder="Usuário" value="admin">
+            <input type="password" id="senha" placeholder="Senha" value="admin123">
+            <button onclick="fazerLogin()">Entrar</button>
+            <hr style="margin: 20px 0;">
+            <h3>Criar conta</h3>
+            <input type="text" id="novo-username" placeholder="Novo usuário">
+            <input type="password" id="nova-senha" placeholder="Nova senha (mín. 6 caracteres)">
+            <input type="text" id="nome-completo" placeholder="Nome completo (opcional)">
+            <button onclick="registrar()">Registrar</button>
+        </div>
+
+        <!-- TELA PRINCIPAL (só aparece depois do login) -->
+        <div id="tela-principal" class="hidden">
+            <div class="header">
+                <h1>🏪 Mercearia do João</h1>
+                <div>
+                    <span id="nome-usuario"></span>
+                    <button onclick="sair()" style="width: auto; margin-left: 10px;">Sair</button>
+                </div>
+            </div>
+
+            <!-- Formulário de produto -->
+            <div class="card">
+                <h2>Cadastrar / Editar Produto</h2>
+                <div id="msg-produto"></div>
+                <input type="hidden" id="produto-id">
+                <input type="text" id="nome" placeholder="Nome do produto">
+                <div class="form-row">
+                    <input type="number" id="preco" placeholder="Preço" step="0.01">
+                    <input type="number" id="quantidade" placeholder="Quantidade">
+                </div>
+                <button onclick="salvarProduto()" class="success">Salvar Produto</button>
+                <button onclick="limparFormulario()" style="background:#5f6368;">Limpar</button>
+            </div>
+
+            <!-- Lista de produtos -->
+            <div class="card">
+                <h2>Lista de Produtos</h2>
+                <button onclick="carregarProdutos()">Atualizar Lista</button>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nome</th>
+                            <th>Preço</th>
+                            <th>Qtd</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lista-produtos"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = "http://127.0.0.1:8000";
+        let token = localStorage.getItem("token");
+
+        // Verificar se já está logado
+        if (token) {
+            mostrarTelaPrincipal();
+            carregarProdutos();
+            buscarUsuario();
+        }
+
+        function mostrarMensagem(elemento, texto, tipo) {
+            const el = document.getElementById(elemento);
+            el.innerHTML = `<div class="msg ${tipo}">${texto}</div>`;
+            setTimeout(() => el.innerHTML = "", 4000);
+        }
+
+        async function fazerLogin() {
+            const username = document.getElementById("username").value;
+            const senha = document.getElementById("senha").value;
+
+            const formData = new FormData();
+            formData.append("username", username);
+            formData.append("password", senha);
+
+            try {
+                const res = await fetch(`${API}/login`, {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    mostrarMensagem("msg-login", data.detail || "Erro no login", "erro");
+                    return;
+                }
+
+                token = data.access_token;
+                localStorage.setItem("token", token);
+                mostrarTelaPrincipal();
+                buscarUsuario();
+                carregarProdutos();
+            } catch (e) {
+                mostrarMensagem("msg-login", "Erro de conexão com a API", "erro");
+            }
+        }
+
+        async function registrar() {
+            const body = {
+                username: document.getElementById("novo-username").value,
+                senha: document.getElementById("nova-senha").value,
+                nome_completo: document.getElementById("nome-completo").value
+            };
+
+            try {
+                const res = await fetch(`${API}/registrar`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    mostrarMensagem("msg-login", data.detail || "Erro ao registrar", "erro");
+                    return;
+                }
+                mostrarMensagem("msg-login", "Usuário criado! Agora faça login.", "sucesso");
+            } catch (e) {
+                mostrarMensagem("msg-login", "Erro de conexão", "erro");
+            }
+        }
+
+        function mostrarTelaPrincipal() {
+            document.getElementById("tela-login").classList.add("hidden");
+            document.getElementById("tela-principal").classList.remove("hidden");
+        }
+
+        function sair() {
+            localStorage.removeItem("token");
+            token = null;
+            document.getElementById("tela-principal").classList.add("hidden");
+            document.getElementById("tela-login").classList.remove("hidden");
+        }
+
+        async function buscarUsuario() {
+            const res = await fetch(`${API}/eu`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const user = await res.json();
+                document.getElementById("nome-usuario").textContent = `Olá, ${user.nome_completo || user.username}`;
+            }
+        }
+
+        async function carregarProdutos() {
+            const res = await fetch(`${API}/produtos`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (!res.ok) {
+                if (res.status === 401) sair();
+                return;
+            }
+            const produtos = await res.json();
+            const tbody = document.getElementById("lista-produtos");
+            tbody.innerHTML = "";
+
+            produtos.forEach(p => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td>${p.nome}</td>
+                        <td>R$ ${p.preco.toFixed(2)}</td>
+                        <td>${p.quantidade}</td>
+                        <td>
+                            <button onclick="editarProduto(${p.id}, '${p.nome}', ${p.preco}, ${p.quantidade})" style="width:auto;padding:6px 10px;">Editar</button>
+                            <button onclick="deletarProduto(${p.id})" class="danger" style="width:auto;padding:6px 10px;">Excluir</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function editarProduto(id, nome, preco, quantidade) {
+            document.getElementById("produto-id").value = id;
+            document.getElementById("nome").value = nome;
+            document.getElementById("preco").value = preco;
+            document.getElementById("quantidade").value = quantidade;
+        }
+
+        function limparFormulario() {
+            document.getElementById("produto-id").value = "";
+            document.getElementById("nome").value = "";
+            document.getElementById("preco").value = "";
+            document.getElementById("quantidade").value = "";
+        }
+
+        async function salvarProduto() {
+            const id = document.getElementById("produto-id").value;
+            const body = {
+                nome: document.getElementById("nome").value,
+                preco: parseFloat(document.getElementById("preco").value),
+                quantidade: parseInt(document.getElementById("quantidade").value)
+            };
+
+            const url = id ? `${API}/produtos/${id}` : `${API}/produtos`;
+            const method = id ? "PUT" : "POST";
+
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    mostrarMensagem("msg-produto", data.detail || "Erro ao salvar", "erro");
+                    return;
+                }
+                mostrarMensagem("msg-produto", "Produto salvo com sucesso!", "sucesso");
+                limparFormulario();
+                carregarProdutos();
+            } catch (e) {
+                mostrarMensagem("msg-produto", "Erro de conexão", "erro");
+            }
+        }
+
+        async function deletarProduto(id) {
+            if (!confirm("Tem certeza que deseja excluir este produto?")) return;
+
+            const res = await fetch(`${API}/produtos/${id}`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (res.ok) {
+                carregarProdutos();
+            }
+        }
+    </script>
+</body>
+</html>
